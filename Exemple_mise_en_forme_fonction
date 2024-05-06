@@ -1,0 +1,27 @@
+function Format-PasswordStyle{
+
+    param (
+    $motDePasse
+    )
+
+    #On affecte la variable de travail $motDePasseModifie et on met en minuscules
+    $motDePasseModifie = $motDePasse.ToLower()
+    #On remplace les e par des 3
+    $motDePasseModifie = $motDePasseModifie.Replace("e", 3)
+    #On remplace les o par des 0
+    $motDePasseModifie = $motDePasseModifie.Replace("o", 0)
+    #On remplace les i par des 1
+    $motDePasseModifie = $motDePasseModifie.Replace("i", 1)
+    #On remplace les r par des 4
+    $motDePasseModifie = $motDePasseModifie.Replace("r", 4)
+    #On met les premières lettres en majuscules
+    $motDePasseModifie = (Get-Culture).TextInfo.ToTitleCase( $motDePasseModifie )
+
+    return $motDePasseModifie
+
+}
+#On demande le premier mot de passe
+$motDePasse = read-host "Entre le mot de passe"
+Write-Host "Vous avez entré : $motDePasse"
+#Affichage du mot de passe après transformations
+Write-Host "Voici le mot de passe modifié : "$_(Format-PasswordStyle($motDePasse))
