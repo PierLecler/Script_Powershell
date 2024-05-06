@@ -1,0 +1,12 @@
+$Userlocal = $env:username
+
+try
+{
+    Remove-LocalGroupMember -Group "Administrators" -Member $Userlocal
+
+    Write-host "Les droits d'administrateur ont bien été supprimé pour l'utilisateur $Userlocal"
+}
+catch
+{
+    Write-host "Les droits d'administrateur n'ont pas pu être retiré du compte $Userlocal : $_"
+}
