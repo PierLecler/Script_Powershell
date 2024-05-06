@@ -1,0 +1,66 @@
+<#
+Description : - Script interactif de reinitialisation de mot de passe utilisateur AD,
+              - Récupère les demandes de reinitialisation dans un fichier .txt
+                "E:\Partages communs\Informatique\Réinitialisation_mot_de_passe_utilisateurAD\log.txt"
+Usage : reinitialisation_mot_de_passe_utilisateurAD.ps1
+Auteur : p.leclerc
+Date : 21/03/2024
+Version : 1.0
+Revisions : -
+
+#>
+
+#Variables
+
+$Destination = "E:\Partages communs\Informatique\Réinitialisation_mot_de_passe_utilisateurAD\log.txt"
+$Date = Get-Date -Format "dd/MM/yyyy HH:mm"
+$NewPassword = "Axeplane.2024!"
+
+#Identification de l'utilisateur
+
+$UserAD = Read-host -prompt "Login"
+$UserADPrenom = Read-host -prompt "Prenom"
+$UserADNom = Read-host -prompt "Nom"
+$Motif = Read-Host -prompt "Motif de la demande de réinitialisation de mot de passe" 
+$UserADPrenomNom = $UserADPrenom+" "+$UserADNom
+ 
+#Réinitialisation du mot de passe de l'utilisateur
+
+Try
+{
+    Set-ADAccountPassword -Identity $UserAD -NewPassword (ConvertTo-SecureString $NewPassword -AsPlainText -Force) -Reset
+
+    Write-host "Le mot de l'utilisateur $UserAD a été réinitialisé. Le mot de passe temporaire est : Axeplane.2024!"
+}
+Catch
+{
+   Write-host "Le mot de l'utilisateur $UserAD n'a pas pu être réinitialisé : $_"
+}
+
+#Modification du compte utilisateur pour la demande de changement de mot de passe à la prochaine connexion
+
+Try
+{
+    Set-ADUser -Identity $UserAD -ChangePasswordAtLogon $true
+
+    Write-host "L'utilisateur $UserAD devra changer son mot de passe temporaire à sa prochaine connexion"
+}
+Catch
+{
+    Write-host "Une erreur est survenue lors de la demande de changement de mot de passe à la prochaine connexion : $_"
+}
+
+#Enregistrement de la demande de réinitialisation dans le fichier log
+
+$texte = $Date+" réinitialisation du mot de passe de l'utilisateur "+$UserPrenomNom+"($UserAD), motif(s) de la demande : "+$Motif
+
+try
+{ 
+    Add-Content -Value $texte -Path $Destination
+
+    Write-host "La réinitialisation a été enregistré dans le fichier log"
+}
+Catch
+{
+    Write-Host "l'enregistrement dans le fichier log a échoué : $_"
+}
