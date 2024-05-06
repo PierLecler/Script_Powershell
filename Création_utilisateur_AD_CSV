@@ -1,0 +1,238 @@
+<# 
+Auteur : p.leclerc
+Date : 21/03/2024
+Description : - deploiement de masse d'utilisateur dans Active Directory via un fichier .CSV
+              - Les dossiers de partage personnel sont dans un dossier (E:\Partages_personnels_utilisateurs\)
+                dont l'héritage des paramètres de sécurité ont été configurés à l'avance
+Usage : deploiement_masse_utilisateurs.ps1 -csvPath E:\Scripts\utilisateurs.csv
+Version : 1.0
+Version Update : -
+
+#>
+
+# Import .CSV
+$CSVFile = "E:\Scripts\utilisateurs.csv"
+$CSVData = Import-CSV -Path $CSVFile -Delimiter ";" -Encoding UTF8
+
+# Boucle création utilisateur
+Foreach ($Utilisateur in $CSVData){
+    
+    #Variables UtilisateurAD
+    $UtilisateurNom = $Utilisateur.Nom
+    $UtilisateurPrenom = $Utilisateur.Prenom
+    $UtilisateurDescription = $Utilisateur.Fonction   
+    $UtilisateurService = $Utilisateur.Service
+    $UtilisateurBureau = "Service " + $UtilisateurService
+    $UtilisateurLogin = (($UtilisateurPrenom).Substring(0,1) + "." + $UtilisateurNom).ToLower()
+    $UtilisateurEmail = "$UtilisateurLogin@axeplane.loc"
+    $UtilisateurMotDePasse = "Axeplane.2024!"  
+    $UtilisateurPrenomNom = $UtilisateurPrenom+" "+$UtilisateurNom  
+    
+    
+    #Variable UO
+    $UtilisateurUO = $Utilisateur.UO
+    
+    #Ajout Utilisateur dans l'AD et UO
+    if (Get-ADUser -Filter {Name -eq $UtilisateurPrenomNom})
+    {
+        Write-host "L'utilisateur existe déjà dans l'ActiveDirectory."
+    }
+    elseif (Get-ADUser -Filter {SamAccountName -eq $UtilisateurLogin})
+    {
+        $UtilisateurLogin = (($UtilisateurPrenom).Substring(0,2) + "." + $UtilisateurNom).ToLower()
+        $UtilisateurEmail = "$UtilisateurLogin@axeplane.loc"
+
+        New-ADUser -Name "$UtilisateurPrenom $UtilisateurNom" `
+                   -DisplayName "$UtilisateurPrenom $UtilisateurNom" `
+                   -GivenName $UtilisateurPrenom `
+                   -Surname $UtilisateurNom `
+                   -SamAccountName $UtilisateurLogin `
+                   -UserPrincipalName "$UtilisateurLogin@AXEPLANE.LOC" `
+                   -EmailAddress $UtilisateurEmail `
+                   -Description $UtilisateurDescription `
+                   -Office $UtilisateurBureau `
+                   -Path "OU=$UtilisateurUO,OU=UO-AXEPLANE,DC=AXEPLANE,DC=LOC" `
+                   -AccountPassword(ConvertTo-SecureString $UtilisateurMotDePasse -AsPlainText -Force) `
+                   -ChangePasswordAtLogon $true `
+                   -Enabled $true 
+
+        Write-Host "L'utilisateur: $UtilisateurLogin ($UtilisateurPrenom $UtilisateurNom) a bien été créé"
+
+        #Variables Groupe AD   
+        $GroupeGG = $Utilisateur.GG
+
+        #Ajout dans le groupe général de Sécurité
+        Try
+        {
+            Add-ADGroupMember -Identity $GroupeGG `
+                              -Members $UtilisateurLogin
+        
+            Write-Host "L'utilisateur $UtilisateurLogin a bien été enregistré dans le groupe $GroupeGG"
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de l'ajout dans le groupe $GroupeGG : $_"
+        }
+    
+        #Variables dossier personnel   
+        $UtilisateurNomDossierPersonnel = $UtilisateurLogin
+        $UtilisateurNomDossierPersonnelPartage = $UtilisateurNomDossierPersonnel+"$"
+
+        #Création dossier personnel
+        Try
+        {
+            New-Item -ItemType Directory `
+                     -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\"
+        
+            Write-host "Le dossier personnel a bien été créé"                                                                                         
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de la création du dossier personnel $UtilisateurNomDossierPersonnel : $_"
+        }
+    
+        #Création du partage du dossier personnel
+        Try
+        {
+            New-SmbShare -Name $UtilisateurNomDossierPersonnelPartage `
+                         -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\" `
+                         -FullAccess "Tout le monde"
+        
+            Write-host "Le partage du dossier personnel ($UtilisateurNomDossierPersonnelPartage) a bien été effectué"                      
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors du partage du dossier personnel ($UtilisateurNomDossierPersonnelPartage) : $_"
+        }
+
+        #Modification des accès au dossier personnel partagé
+        Try
+        {
+            Add-NTFSAccess  -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\" `
+                            -Account $UtilisateurLogin `
+                            -AccessRights FullControl
+                        
+            Write-host "Les droits d'accès ont bien été modifiés"
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de la modification des droits d'accès du dossier personnel partagé : $_"
+        }
+
+        #Variable chemin partage dossier personnel
+        $UtilisateurCheminDossierPersonnelPartage = "\\SRV-AD\$UtilisateurNomDossierPersonnelPartage"
+
+        #Ajout mappage du dossier personnel partage sur lecteur P:
+        Try
+        {
+            Set-ADUser -Identity $UtilisateurLogin `
+                       -HomeDrive "P:" `
+                       -HomeDirectory $UtilisateurCheminDossierPersonnelPartage
+            
+            Write-host "Le mappage du dossier personnel partagé sur la lettre (P:) a bien été effectué"
+        }
+        Catch
+        {
+            Write-host "L'ajout du mappage du dossier personnel partagé sur la lettre (P:) a échoué : $_"
+        } 
+    }
+    else
+    {        
+        New-ADUser -Name "$UtilisateurPrenom $UtilisateurNom" `
+                   -DisplayName "$UtilisateurPrenom $UtilisateurNom" `
+                   -GivenName $UtilisateurPrenom `
+                   -Surname $UtilisateurNom `
+                   -SamAccountName $UtilisateurLogin `
+                   -UserPrincipalName "$UtilisateurLogin@AXEPLANE.LOC" `
+                   -EmailAddress $UtilisateurEmail `
+                   -Description $UtilisateurDescription `
+                   -Office $UtilisateurBureau `
+                   -Path "OU=$UtilisateurUO,OU=UO-AXEPLANE,DC=AXEPLANE,DC=LOC" `
+                   -AccountPassword(ConvertTo-SecureString $UtilisateurMotDePasse -AsPlainText -Force) `
+                   -ChangePasswordAtLogon $true `
+                   -Enabled $true 
+
+        Write-Host "L'utilisateur: $UtilisateurLogin ($UtilisateurPrenom $UtilisateurNom) a bien été créé"      
+    
+    
+        #Variables Groupe AD   
+        $GroupeGG = $Utilisateur.GG
+
+        #Ajout dans le groupe général de Sécurité
+        Try
+        {
+            Add-ADGroupMember -Identity $GroupeGG `
+                              -Members $UtilisateurLogin
+        
+            Write-Host "L'utilisateur $UtilisateurLogin a bien été enregistré dans le groupe $GroupeGG"
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de l'ajout dans le groupe $GroupeGG : $_"
+        }
+    
+        #Variables dossier personnel   
+        $UtilisateurNomDossierPersonnel = $UtilisateurLogin
+        $UtilisateurNomDossierPersonnelPartage = $UtilisateurNomDossierPersonnel+"$"
+
+        #Création dossier personnel
+        Try
+        {
+            New-Item -ItemType Directory `
+                     -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\"
+        
+            Write-host "Le dossier personnel a bien été créé"                                                                                         
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de la création du dossier personnel $UtilisateurNomDossierPersonnel : $_"
+        }
+
+        #Création du partage du dossier personnel
+        Try
+        {
+            New-SmbShare -Name $UtilisateurNomDossierPersonnelPartage `
+                         -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\" `
+                         -FullAccess "Tout le monde"
+
+            Write-host "Le partage du dossier personnel ($UtilisateurNomDossierPersonnelPartage) a bien été effectué"                      
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors du partage du dossier personnel ($UtilisateurNomDossierPersonnelPartage) : $_"
+        }
+
+        #Modification des accès au dossier personnel partagé
+        Try
+        {
+            Add-NTFSAccess  -Path "E:\Partages_personnels_utilisateurs\$UtilisateurNomDossierPersonnel\" `
+                            -Account $UtilisateurLogin `
+                            -AccessRights FullControl
+                        
+            Write-host "Les droits d'accès ont bien été modifiés"
+        }
+        Catch
+        {
+            Write-Host "Une erreur est survenue lors de la modification des droits d'accès du dossier personnel partagé : $_"
+        }
+
+        #Variable chemin partage dossier personnel
+        $UtilisateurCheminDossierPersonnelPartage = "\\SRV-AD\$UtilisateurNomDossierPersonnelPartage"
+
+        #Ajout mappage du dossier personnel partage sur lecteur P:
+        Try
+        {
+            Set-ADUser -Identity $UtilisateurLogin `
+                       -HomeDrive "P:" `
+                       -HomeDirectory $UtilisateurCheminDossierPersonnelPartage
+        
+            Write-host "Le mappage du dossier personnel partagé sur la lettre (P:) a bien été effectué"
+        }
+        Catch
+        {
+            Write-host "L'ajout du mappage du dossier personnel partagé sur la lettre (P:) a échoué : $_"
+        }
+    } 
+}
+
+
