@@ -1,0 +1,7 @@
+function Add-ToLogFile($texteAAjouter) {
+
+    $dateAction = Get-Date -Format "yyyyMMdd HH:mm:ss"
+    Add-Content -Value $dateAction" -- "$texteAAjouter -Path "log.txt"
+}
+
+Add-ToLogFile("Ma ligne à ajouter")
